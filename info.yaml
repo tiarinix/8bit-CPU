@@ -1,8 +1,7 @@
 # Tiny Tapeout project information
 project:
   title:        "8-bit educational SAP-style CPU"      # Project title
-  author:       "tiarinix"      # Your name
-  discord:      "Tiarinix"      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
+  author:       "University of La Frontera"      # Your name
   description:  "A small 8-bit CPU (5 general-purpose registers, ALU, conditional jumps) with a shared bus and byte-programmable memory"
   language:     "SystemVerilog" # other examples include Verilog, Amaranth, VHDL, etc
   clock_hz:     0       # not yet characterized/timing-closed against a target frequency
