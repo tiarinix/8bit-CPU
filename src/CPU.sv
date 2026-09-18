@@ -1,8 +1,8 @@
 // CPU layout
 //
 // Depends on: modules/alu.sv, modules/control.sv, modules/memory.sv,
-// modules/mux.sv, modules/plus_one_adder.sv, modules/register.sv,
-// modules/tristate_buffer.sv. No `include here on purpose: every source
+// modules/mux.sv, modules/plus_one_adder.sv, modules/register.sv.
+// No `include here on purpose: every source
 // file is compiled together as an explicit list (see info.yaml
 // source_files and run_sim.sh), matching how Tiny Tapeout's synthesis
 // flow reads multi-file designs.
@@ -23,14 +23,20 @@ module CPU #(
     // ---- Main bus ----
     wire [7:0] bus;
 
-    // ---- Halt / internal clocks ----
+    // ---- Halt / clock enables ----
+    // A single real clock (`clk`) drives every flip-flop; gating the clock
+    // itself (as this used to do) creates two derived clock trees with no
+    // declared relationship in the SDC, which STA can't reconcile -- it
+    // showed up as an unfixable ~10ns hold violation between them. Freezing
+    // registers via a synchronous write-enable instead keeps one clock tree
+    // for the whole design.
     wire halt_set;
     reg  halted;
 
     // PC and memory: freeze on HALT, but stay alive during flashing
-    wire mem_pc_clk = clk & ~halted;
+    wire mem_pc_en = ~halted;
     // Rest of the CPU: freezes on HALT and also during flashing
-    wire cpu_clk    = clk & ~halted & ~program_mode;
+    wire cpu_en    = ~halted & ~program_mode;
 
     always @(posedge clk or posedge reset) begin
         if (reset)
@@ -45,21 +51,19 @@ module CPU #(
     wire [7:0] ext_in_out;
 
     register #(.WIDTH(8)) reg_ext_in (
-        .clk(cpu_clk), .reset(reset),
-        .wr(ext_in_wr), .Data_IN(external_input), .Data_OUT(ext_in_out)
+        .clk(clk), .reset(reset),
+        .wr(ext_in_wr & cpu_en), .Data_IN(external_input), .Data_OUT(ext_in_out)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_ext_in (
-        .Data_IN(ext_in_out), .enable(ext_in_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire ext_in_bus_en = ext_in_en & ~program_mode;
 
     // ============ External output ============
 
     wire ext_out_wr;
 
     register #(.WIDTH(8)) reg_ext_out (
-        .clk(cpu_clk), .reset(reset),
-        .wr(ext_out_wr), .Data_IN(bus), .Data_OUT(external_output)
+        .clk(clk), .reset(reset),
+        .wr(ext_out_wr & cpu_en), .Data_IN(bus), .Data_OUT(external_output)
     );
 
     // ============ General-purpose registers: A, B, C, D, E ============
@@ -69,36 +73,36 @@ module CPU #(
     wire [2:0] reg_dest_sel;
     wire       reg_dest_wr;
 
-    wire reg_a_wr = reg_dest_wr & (reg_dest_sel == 3'd0);
-    wire reg_b_wr = reg_dest_wr & (reg_dest_sel == 3'd1);
-    wire reg_c_wr = reg_dest_wr & (reg_dest_sel == 3'd2);
-    wire reg_d_wr = reg_dest_wr & (reg_dest_sel == 3'd3);
-    wire reg_e_wr = reg_dest_wr & (reg_dest_sel == 3'd4);
+    wire reg_a_wr = reg_dest_wr & (reg_dest_sel == 3'd0) & cpu_en;
+    wire reg_b_wr = reg_dest_wr & (reg_dest_sel == 3'd1) & cpu_en;
+    wire reg_c_wr = reg_dest_wr & (reg_dest_sel == 3'd2) & cpu_en;
+    wire reg_d_wr = reg_dest_wr & (reg_dest_sel == 3'd3) & cpu_en;
+    wire reg_e_wr = reg_dest_wr & (reg_dest_sel == 3'd4) & cpu_en;
 
     wire [7:0] reg_a_out, reg_b_out, reg_c_out, reg_d_out, reg_e_out;
 
     register #(.WIDTH(8)) reg_a (
-        .clk(cpu_clk), .reset(reset),
+        .clk(clk), .reset(reset),
         .wr(reg_a_wr), .Data_IN(bus), .Data_OUT(reg_a_out)
     );
 
     register #(.WIDTH(8)) reg_b (
-        .clk(cpu_clk), .reset(reset),
+        .clk(clk), .reset(reset),
         .wr(reg_b_wr), .Data_IN(bus), .Data_OUT(reg_b_out)
     );
 
     register #(.WIDTH(8)) reg_c (
-        .clk(cpu_clk), .reset(reset),
+        .clk(clk), .reset(reset),
         .wr(reg_c_wr), .Data_IN(bus), .Data_OUT(reg_c_out)
     );
 
     register #(.WIDTH(8)) reg_d (
-        .clk(cpu_clk), .reset(reset),
+        .clk(clk), .reset(reset),
         .wr(reg_d_wr), .Data_IN(bus), .Data_OUT(reg_d_out)
     );
 
     register #(.WIDTH(8)) reg_e (
-        .clk(cpu_clk), .reset(reset),
+        .clk(clk), .reset(reset),
         .wr(reg_e_wr), .Data_IN(bus), .Data_OUT(reg_e_out)
     );
 
@@ -131,8 +135,8 @@ module CPU #(
     wire [7:0] reg_f_out;
 
     register #(.WIDTH(8)) reg_f (
-        .clk(cpu_clk), .reset(reset),
-        .wr(reg_f_wr), .Data_IN(alu_flags), .Data_OUT(reg_f_out)
+        .clk(clk), .reset(reset),
+        .wr(reg_f_wr & cpu_en), .Data_IN(alu_flags), .Data_OUT(reg_f_out)
     );
 
     // ============ ALU output register ============
@@ -141,13 +145,11 @@ module CPU #(
     wire [7:0] alu_out_data;
 
     register #(.WIDTH(8)) reg_alu_out (
-        .clk(cpu_clk), .reset(reset),
-        .wr(alu_out_wr), .Data_IN(alu_result), .Data_OUT(alu_out_data)
+        .clk(clk), .reset(reset),
+        .wr(alu_out_wr & cpu_en), .Data_IN(alu_result), .Data_OUT(alu_out_data)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_alu_out (
-        .Data_IN(alu_out_data), .enable(alu_out_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire alu_out_bus_en = alu_out_en & ~program_mode;
 
     // ============ Output to bus: registers A..E ============
 
@@ -161,9 +163,7 @@ module CPU #(
         .Data_OUT(bus_out_data)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_bus_out (
-        .Data_IN(bus_out_data), .enable(bus_out_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire bus_out_bus_en = bus_out_en & ~program_mode;
 
     // ============ Program Counter (PC) ============
 
@@ -175,8 +175,8 @@ module CPU #(
     wire       pc_wr_final = program_mode ? program_wr  : pc_wr;
 
     register #(.WIDTH(8)) reg_pc (
-        .clk(mem_pc_clk), .reset(reset),
-        .wr(pc_wr_final), .Data_IN(pc_data_in), .Data_OUT(pc_out)
+        .clk(clk), .reset(reset),
+        .wr(pc_wr_final & mem_pc_en), .Data_IN(pc_data_in), .Data_OUT(pc_out)
     );
 
     PlusOneAdder #(.WIDTH(8)) pc_incrementer (
@@ -198,8 +198,8 @@ module CPU #(
     wire [7:0] addr_out;
 
     register #(.WIDTH(8)) reg_addr (
-        .clk(cpu_clk), .reset(reset),
-        .wr(addr_wr), .Data_IN(bus), .Data_OUT(addr_out)
+        .clk(clk), .reset(reset),
+        .wr(addr_wr & cpu_en), .Data_IN(bus), .Data_OUT(addr_out)
     );
 
     // ============ Memory ============
@@ -216,13 +216,17 @@ module CPU #(
     wire                   mem_wr_final      = program_mode ? program_wr : mem_wr;
 
     MEM #(.WIDTH(8), .DEPTH(MEM_DEPTH)) mem (
-        .clk(mem_pc_clk), .reset(reset),
-        .wr(mem_wr_final), .Data_IN(mem_data_in_final), .addr(mem_addr_final), .Data_OUT(mem_out)
+        .clk(clk), .reset(reset),
+        .wr(mem_wr_final & mem_pc_en), .Data_IN(mem_data_in_final), .addr(mem_addr_final), .Data_OUT(mem_out)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_mem_out (
-        .Data_IN(mem_out), .enable(mem_out_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire mem_out_bus_en = mem_out_en & ~program_mode;
+
+    assign bus =
+        ({8{ext_in_bus_en}}  & ext_in_out)   |
+        ({8{alu_out_bus_en}} & alu_out_data) |
+        ({8{bus_out_bus_en}} & bus_out_data) |
+        ({8{mem_out_bus_en}} & mem_out);
 
     // ============ Controller ============
 
@@ -230,13 +234,14 @@ module CPU #(
     wire [7:0] ir_out;
 
     register #(.WIDTH(8)) reg_ir (
-        .clk(cpu_clk), .reset(reset),
-        .wr(ir_wr), .Data_IN(bus), .Data_OUT(ir_out)
+        .clk(clk), .reset(reset),
+        .wr(ir_wr & cpu_en), .Data_IN(bus), .Data_OUT(ir_out)
     );
 
     control control_unit (
-        .clk(cpu_clk),
+        .clk(clk),
         .reset(reset),
+        .en(cpu_en),
         .ir_out(ir_out),
         .reg_f_out(reg_f_out),
 

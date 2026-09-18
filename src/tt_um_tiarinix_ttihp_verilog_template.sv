@@ -26,7 +26,7 @@ module tt_um_tiarinix_ttihp_verilog_template (
     assign uio_out = 8'h00;
     assign uio_oe  = 8'h00; // all 8 bidirectional pins are set as input
 
-    CPU #(.MEM_DEPTH(16)) cpu_inst (
+    CPU #(.MEM_DEPTH(14)) cpu_inst (
         .clk(clk),
         .reset(reset),
         .program_mode(uio_in[0]),
