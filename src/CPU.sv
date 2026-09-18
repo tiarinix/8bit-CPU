@@ -1,8 +1,8 @@
 // CPU layout
 //
 // Depends on: modules/alu.sv, modules/control.sv, modules/memory.sv,
-// modules/mux.sv, modules/plus_one_adder.sv, modules/register.sv,
-// modules/tristate_buffer.sv. No `include here on purpose: every source
+// modules/mux.sv, modules/plus_one_adder.sv, modules/register.sv.
+// No `include here on purpose: every source
 // file is compiled together as an explicit list (see info.yaml
 // source_files and run_sim.sh), matching how Tiny Tapeout's synthesis
 // flow reads multi-file designs.
@@ -49,9 +49,7 @@ module CPU #(
         .wr(ext_in_wr), .Data_IN(external_input), .Data_OUT(ext_in_out)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_ext_in (
-        .Data_IN(ext_in_out), .enable(ext_in_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire ext_in_bus_en = ext_in_en & ~program_mode;
 
     // ============ External output ============
 
@@ -145,9 +143,7 @@ module CPU #(
         .wr(alu_out_wr), .Data_IN(alu_result), .Data_OUT(alu_out_data)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_alu_out (
-        .Data_IN(alu_out_data), .enable(alu_out_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire alu_out_bus_en = alu_out_en & ~program_mode;
 
     // ============ Output to bus: registers A..E ============
 
@@ -161,9 +157,7 @@ module CPU #(
         .Data_OUT(bus_out_data)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_bus_out (
-        .Data_IN(bus_out_data), .enable(bus_out_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire bus_out_bus_en = bus_out_en & ~program_mode;
 
     // ============ Program Counter (PC) ============
 
@@ -220,9 +214,13 @@ module CPU #(
         .wr(mem_wr_final), .Data_IN(mem_data_in_final), .addr(mem_addr_final), .Data_OUT(mem_out)
     );
 
-    TRIStateBuffer #(.WIDTH(8)) tristate_mem_out (
-        .Data_IN(mem_out), .enable(mem_out_en & ~program_mode), .Data_OUT(bus)
-    );
+    wire mem_out_bus_en = mem_out_en & ~program_mode;
+
+    assign bus =
+        ({8{ext_in_bus_en}}  & ext_in_out)   |
+        ({8{alu_out_bus_en}} & alu_out_data) |
+        ({8{bus_out_bus_en}} & bus_out_data) |
+        ({8{mem_out_bus_en}} & mem_out);
 
     // ============ Controller ============
 
