@@ -75,53 +75,9 @@ locally" and "how it actually gets built".
 - `halted` (in `CPU.sv`) permanently freezes `cpu_clk`/`mem_pc_clk` once
   `HLT` executes, until the next `reset`.
 
-## Bugs found and fixed (debugging session)
+## Instruction set
 
-1. **`tristate_buffer.sv`: `output logic` instead of `output wire`.**
-   In SystemVerilog, `logic` on an output port behaves like a variable
-   (only one driver allowed). With 5 tri-state buffers driving the same
-   `bus`, Icarus failed with "must have a single driver". Changed to
-   `output wire` (a net, which allows multiple drivers with high-impedance
-   resolution).
-
-2. **`memory.sv`: `reset` was clearing all of memory's contents.**
-   The testbench does a second `reset` after flashing the program (to
-   bring the PC back to 0), and that was wiping the program that had just
-   been loaded. Memory-clearing on reset was removed — real program memory
-   isn't cleared by the CPU's reset, only the datapath registers are.
-
-3. **Race condition releasing `reset` in the testbench.**
-   The pattern `reset = 1; repeat(2) @(posedge clk); reset = 0;` dropped
-   reset on the exact same edge the FSM uses to decide its transition,
-   which in simulation is a race between two concurrent processes. A `#1;`
-   was added before dropping `reset` so the change lands away from any
-   edge.
-
-4. **`needs_operand` badly synchronized in `control.sv`.**
-   The decision of whether `FETCH2` is needed read `bus_in` live, but by
-   the time that signal was evaluated the PC had already been incremented
-   (within the same `FETCH1` state) and the bus was already showing the
-   byte after the opcode. Changed to use `ir_out` instead (already loaded
-   half a cycle earlier, at no extra cost), and removed the `bus_in` port
-   which was no longer needed.
-
-5. **`register.sv`/`memory.sv`: blocking (`=`) instead of non-blocking
-   (`<=`) assignment inside `always_ff`.** Functionally equivalent for
-   these specific single-assignment blocks, but non-blocking is the
-   correct style for sequential logic and avoids a lint warning some
-   tools raise. Fixed when integrating into `ttihp-verilog-template`.
-
-## Instruction set — history
-
-**Implemented before this section's redesign:**
-`NOP, LDA, LDB, ADD, OUT, STR, JMP, HLT` — 3 registers (A, B, C), no
-conditional jumps, no usable external input (the `Reg IN` datapath exists
-but no opcode triggered it), flags (`FLAGS`) wired but never updated by
-any instruction.
-
-## Instruction set — final (IMPLEMENTED)
-
-Adds registers D and E (5 total, matching the original block diagram),
+Adds registers (5 total),
 conditional jumps, and the `IN` instruction for external input. Format:
 family = `ir_out[7:3]`, register/condition field = `ir_out[2:0]`.
 Registers: A=000, B=001, C=010, D=011, E=100 (101-111 invalid → fall into
@@ -176,20 +132,7 @@ family). The destination register no longer has one `wr` per letter:
 `CONTROL` exposes `reg_dest_sel[2:0]` + `reg_dest_wr`, decoded in
 `CPU.sv` into the 5 individual enables.
 
-## Block diagram — differences from the current RTL
-
-(still pending being redrawn)
-
-1. The diagram already showed 5 registers (A-E) — the RTL now has them
-   too, this difference is closed.
-2. The `ADDR` mux is drawn **before** the register; in the real RTL it's
-   **after** (between the `ADDR`/`PC` output and `MEM.Addr`).
-3. Missing the flashing bypass path (`external_input` → `MEM.In` direct,
-   `PC` → `MEM.Addr` direct during `program_mode`).
-4. Missing the `FLAGS → CONTROL` feedback line (already in the RTL, and
-   now it's actually used, by the conditional jumps).
-
-## Tiny Tapeout wrapper (IMPLEMENTED)
+## Tiny Tapeout wrapper
 
 `src/tt_um_tiarinix_ttihp_verilog_template.sv` adapts TT's fixed pinout
 to `CPU.sv`'s own port, without touching the datapath:
@@ -222,7 +165,7 @@ values mid-cycle (right after a `posedge`) instead of exactly on the
 testbench stimulus timing — but worth keeping in mind if more testbenches
 are added that drive signals through the wrapper.
 
-## `info.yaml` (IMPLEMENTED)
+## `info.yaml`
 
 Filled in at the repo root against the `ttihp-verilog-template` schema.
 Notable choices:
@@ -239,39 +182,6 @@ Notable choices:
   `uio[0]`/`uio[1]` → `program_mode`/`program_wr`, rest of `uio` blank).
 - `source_files` lists every file under `src/` explicitly, matching
   `test/Makefile`'s `PROJECT_SOURCES`.
-
-## Pending for the Tiny Tapeout submission
-
-1. **Shuttle deadline.** Targeting TTIHP26b, which closes 2026-09-21.
-2. **Real cocotb test in `test/test.py`.** The official harness currently
-   still runs the generic example test (`assert True`) — it compiles and
-   "passes" but doesn't exercise the CPU. `unit_tests/` and
-   `testbench/tt_wrapper_tb.sv` already prove the design works; porting
-   one of those programs into `test/test.py` (driving the wrapper's real
-   pins: `rst_n`, `uio_in[0:1]`, `ui_in`) is what's left to make the
-   official CI test — and the automatic gate-level test that `gds.yaml`
-   runs on the post-synthesis netlist — actually meaningful.
-3. **Synthesis check** (Yosys/LibreLane) — never run against the real IHP
-   PDK yet; there are Icarus warnings (`sel` port widths on the muxes, a
-   "sorry" in `alu.sv` about constant selects) that could be real
-   synthesis problems even though they simulate fine. Also unconfirmed:
-   whether the design actually fits in `tiles: "1x1"`.
-4. Redraw the block diagram (see the previous section).
-
-## Verification status
-
-`testbench/CPU_tb.sv` was rewritten for the final instruction set and
-passes: `PASS: external_output = 255 (expected 255)`. In a single program
-it exercises: `LD/ST` (with a memory roundtrip), `ADD/SUB/AND/OR/XOR/NOT/
-SHR/SHL`, `CMP` (via `SUB`+flags), `JZ` and `JNZ` (with traps that corrupt
-the result to `99` if the jump fails in either direction — jumps when it
-shouldn't, or doesn't jump when it should), and `IN`/`OUT` with registers
-D and E in addition to A/B/C.
-
-Verified that the traps are real (not false positives): `JZ` was broken
-on purpose (forced to never jump) and gave `FAIL: 99` as expected; `JNZ`
-was broken on purpose (forced to always jump) and also gave `FAIL: 99`.
-Both cases restored before leaving the final run green.
 
 ## Per-instruction individual tests
 
