@@ -1,6 +1,7 @@
 module control (
     input  wire       clk,
     input  wire       reset,
+    input  wire       en,      // freezes the state register (HALT / flashing)
     input  wire [7:0] ir_out,
     input  wire [7:0] reg_f_out,   // bit0=carry, bit1=negative, bit2=zero, bit3=overflow
 
@@ -133,7 +134,7 @@ module control (
     always @(posedge clk or posedge reset) begin
         if (reset)
             state <= STATE_FETCH1;
-        else begin
+        else if (en) begin
             case (state)
                 STATE_FETCH1:  state <= needs_operand ? STATE_FETCH2 : STATE_EXECUTE;
                 STATE_FETCH2:  state <= STATE_EXECUTE;
