@@ -45,10 +45,10 @@
   "DESIGN_REPAIR_BUFFER_OUTPUT_PORTS": 0,
 
   "//": "Reduce wasted space",
-  "TOP_MARGIN_MULT": 0,
-  "BOTTOM_MARGIN_MULT": 0,
-  "LEFT_MARGIN_MULT": 2,
-  "RIGHT_MARGIN_MULT": 2,
+  "TOP_MARGIN_MULT": 1,
+  "BOTTOM_MARGIN_MULT": 1,
+  "LEFT_MARGIN_MULT": 6,
+  "RIGHT_MARGIN_MULT": 6,
 
   "//": "Absolute die size",
   "FP_SIZING": "absolute",
