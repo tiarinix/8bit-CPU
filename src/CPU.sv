@@ -38,7 +38,10 @@ module CPU #(
     // Rest of the CPU: freezes on HALT and also during flashing
     wire cpu_en    = ~halted & ~program_mode;
 
-    always @(posedge clk or posedge reset) begin
+    // Synchronous reset, matching register.sv's reset style elsewhere in
+    // the design (Verilator flagged the previous async-reset version here
+    // as SYNCASYNCNET: the same `reset` net used both ways).
+    always @(posedge clk) begin
         if (reset)
             halted <= 1'b0;
         else if (halt_set)

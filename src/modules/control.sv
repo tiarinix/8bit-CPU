@@ -50,15 +50,15 @@ module control (
 );
 
     // ---- General-purpose registers ----
+    // Only REG_A is referenced here (FAM_SINGLE/ALU ops always target A);
+    // B..E (3'd1..3'd4) are selected directly via `field` and never need a
+    // named constant in this module. 3'd5..3'd7 invalid: fall into the
+    // default of each case (no-op).
     localparam [2:0] REG_A = 3'd0;
-    localparam [2:0] REG_B = 3'd1;
-    localparam [2:0] REG_C = 3'd2;
-    localparam [2:0] REG_D = 3'd3;
-    localparam [2:0] REG_E = 3'd4;
-    // 3'd5..3'd7 invalid: fall into the default of each case (no-op)
 
     // ---- Opcodes: family in ir_out[7:3], register/condition in ir_out[2:0] ----
-    localparam [7:0] OP_NOP = 8'h00;
+    // OP_NOP (8'h00) needs no named constant: it's whatever falls into the
+    // `default` case below that isn't OP_HLT.
     localparam [7:0] OP_HLT = 8'hFF;
 
     localparam [4:0] FAM_LD     = 5'd1;  // 0x08-0x0C: reg <- mem[addr]
@@ -131,7 +131,9 @@ module control (
     // STATE_FETCH1, so this decision doesn't need to wait an extra cycle.
     wire needs_operand = (family == FAM_LD) || (family == FAM_ST) || (family == FAM_JCC);
 
-    always @(posedge clk or posedge reset) begin
+    // Synchronous reset, matching register.sv's reset style elsewhere in
+    // the design.
+    always @(posedge clk) begin
         if (reset)
             state <= STATE_FETCH1;
         else if (en) begin
