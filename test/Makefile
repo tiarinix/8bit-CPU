@@ -6,7 +6,7 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v
+PROJECT_SOURCES = modules/alu.sv modules/control.sv modules/memory.sv modules/mux.sv modules/plus_one_adder.sv modules/register.sv modules/tristate_buffer.sv CPU.sv tt_um_tiarinix_ttihp_verilog_template.sv
 
 ifneq ($(GATES),yes)
 
@@ -28,6 +28,12 @@ VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13g2/libs.ref/sg13g2_stdcell/verilog/sg13g2
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
 
 endif
+
+# The design uses SystemVerilog constructs (logic, always_comb, always_ff,
+# typed parameters, $clog2 on typed values). Icarus needs -g2012 to parse
+# them; without this, compilation of the .sv files fails (the template's
+# generic example is plain Verilog and never needed this flag).
+COMPILE_ARGS 		+= -g2012
 
 # Allow sharing configuration between design and testbench via `include`:
 COMPILE_ARGS 		+= -I$(SRC_DIR)

@@ -28,8 +28,12 @@ jobs:
           cd test
           make clean
           make
-          # make will return success even if the test fails, so check for failure in the results.xml
-          ! grep failure results.xml
+          # make will return success even if the test fails, so check for a
+          # <failure> element in the results.xml. Note: grepping for the bare
+          # word "failure" (without the "<") always matches, even on a clean
+          # run, because the JUnit XML's own summary attribute is
+          # failures="0" -- that substring contains "failure" too.
+          ! grep '<failure' results.xml
 
       - name: Test Summary
         uses: test-summary/action@v2.4
